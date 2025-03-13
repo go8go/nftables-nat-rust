@@ -4,6 +4,32 @@
 
 > 适用于centos8及以后的redhat系发行版和支持nftables的debian系linux发行版如debian10
 
+## 快速安装
+
+使用以下命令一键安装：
+
+```shell
+# 下载安装脚本
+curl -sSLf https://raw.githubusercontent.com/go8go/nftables-nat-rust/master/install.sh -o install.sh
+# 添加执行权限
+chmod +x install.sh
+# 执行安装（请确保以root用户运行）
+sudo ./install.sh
+```
+
+安装完成后，脚本会引导您：
+1. 选择转发类型（单端口或端口范围）
+2. 配置转发规则（本地端口、目标端口、目标地址等）
+3. 可以添加多条转发规则
+4. 自动启动服务并设置开机自启
+
+安装后管理命令：
+- `systemctl status nat`  # 查看服务状态
+- `systemctl restart nat` # 重启服务
+- `systemctl stop nat`    # 停止服务
+- `cat /opt/nat/nat.log`  # 查看日志
+- `vim /etc/nat.conf`     # 编辑转发规则
+
 ## 优势
 
 1. 实现动态nat：自动探测配置文件和目标域名IP的变化，除变更配置外无需任何手工介入
