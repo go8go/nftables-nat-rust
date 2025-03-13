@@ -8,33 +8,50 @@ fi
 
 echo "开始安装nftables-nat-rust..."
 
+# 清理可能存在的包管理器锁
+cleanup_locks() {
+    echo "清理包管理器锁..."
+    rm -f /var/lib/rpm/.rpm.lock
+    rm -f /var/lib/rpm/__db.*
+    rm -f /var/lib/dpkg/lock*
+    rm -f /var/cache/apt/archives/lock
+    rm -f /var/lib/apt/lists/lock
+    killall -9 yum dnf apt-get 2>/dev/null || true
+}
+
 # 检测系统类型
 if [ -f /etc/debian_version ]; then
     # Debian/Ubuntu系统
     echo "检测到Debian/Ubuntu系统"
-    apt-get update
-    apt-get install -y nftables curl
-    systemctl stop ufw
-    systemctl disable ufw
-    systemctl stop iptables
-    systemctl disable iptables
+    cleanup_locks
+    apt-get update || { echo "apt-get update 失败，请检查网络或手动运行: apt-get update"; exit 1; }
+    apt-get install -y nftables curl || { echo "安装软件包失败，请检查系统状态"; exit 1; }
+    systemctl stop ufw || true
+    systemctl disable ufw || true
+    systemctl stop iptables || true
+    systemctl disable iptables || true
 else
     # CentOS/RHEL系统
     echo "检测到CentOS/RHEL系统"
     # 关闭firewalld
-    systemctl stop firewalld
-    systemctl disable firewalld
-    # 安装nftables
-    yum install -y nftables curl
+    systemctl stop firewalld || true
+    systemctl disable firewalld || true
+    # 清理并安装nftables
+    cleanup_locks
+    yum clean all
+    rm -rf /var/cache/yum
+    yum install -y nftables curl || { echo "安装软件包失败，请检查系统状态"; exit 1; }
 fi
 
 # 关闭selinux
-setenforce 0 2>/dev/null
+echo "配置SELinux..."
+setenforce 0 2>/dev/null || true
 if [ -f /etc/selinux/config ]; then
     sed -i 's/SELINUX=enforcing/SELINUX=disabled/' /etc/selinux/config
 fi
 
 # 开启端口转发
+echo "配置端口转发..."
 echo 1 > /proc/sys/net/ipv4/ip_forward
 sed -i '/^net.ipv4.ip_forward=0/'d /etc/sysctl.conf
 if ! grep -q "net.ipv4.ip_forward=1" /etc/sysctl.conf; then
@@ -46,17 +63,21 @@ sysctl -p
 echo "下载nat程序..."
 curl -sSLf https://github.com/arloor/nftables-nat-rust/releases/download/v1.0.0/dnat -o /tmp/nat || {
     echo "下载失败，尝试备用地址..."
-    curl -sSLf https://us.arloor.dev/https://github.com/arloor/nftables-nat-rust/releases/download/v1.0.0/dnat -o /tmp/nat
+    curl -sSLf https://us.arloor.dev/https://github.com/arloor/nftables-nat-rust/releases/download/v1.0.0/dnat -o /tmp/nat || {
+        echo "下载nat程序失败，请检查网络连接"
+        exit 1
+    }
 }
-install /tmp/nat /usr/local/bin/nat
+install /tmp/nat /usr/local/bin/nat || { echo "安装nat程序失败"; exit 1; }
 
 # 创建必要的目录和文件
-mkdir -p /opt/nat
-touch /opt/nat/env
+echo "创建必要的目录和文件..."
+mkdir -p /opt/nat || { echo "创建目录失败"; exit 1; }
+touch /opt/nat/env || { echo "创建env文件失败"; exit 1; }
 
 # 创建systemd服务
 echo "创建systemd服务..."
-cat > /lib/systemd/system/nat.service <<EOF
+cat > /lib/systemd/system/nat.service <<EOF || { echo "创建服务文件失败"; exit 1; }
 [Unit]
 Description=dnat-service
 After=network-online.target
@@ -82,7 +103,7 @@ echo "2) 端口范围转发 (RANGE)"
 read -p "请输入选择 [1/2]: " forward_type
 
 # 创建配置文件
-echo "# 端口转发配置文件" > /etc/nat.conf
+echo "# 端口转发配置文件" > /etc/nat.conf || { echo "创建配置文件失败"; exit 1; }
 
 while true; do
     if [ "$forward_type" == "1" ]; then
@@ -119,9 +140,9 @@ done
 
 # 设置服务开机启动
 echo "设置服务..."
-systemctl daemon-reload
-systemctl enable nat
-systemctl start nat
+systemctl daemon-reload || { echo "重载systemd失败"; exit 1; }
+systemctl enable nat || { echo "设置开机启动失败"; exit 1; }
+systemctl start nat || { echo "启动服务失败"; exit 1; }
 
 echo "安装完成！"
 echo "当前转发规则如下："
